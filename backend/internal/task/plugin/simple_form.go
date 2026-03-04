@@ -21,9 +21,10 @@ import (
 
 // SimpleFormAction represents the action to perform on the form
 const (
-	SimpleFormActionDraft     = "SAVE_AS_DRAFT"
-	SimpleFormActionSubmit    = "SUBMIT_FORM"
-	SimpleFormActionOgaVerify = "OGA_VERIFICATION"
+	SimpleFormActionDraft       = "SAVE_AS_DRAFT"
+	SimpleFormActionSubmit      = "SUBMIT_FORM"
+	SimpleFormActionOgaVerify   = "OGA_VERIFICATION"
+	SimpleFormActionOgaFeedback = "OGA_VERIFICATION_FEEDBACK"
 )
 
 // Resolved FSM actions for conditional transitions.
@@ -44,6 +45,7 @@ const (
 	TraderSavedAsDraft    SimpleFormState = "DRAFT"
 	TraderSubmitted       SimpleFormState = "SUBMITTED"
 	OGAAcknowledged       SimpleFormState = "OGA_ACKNOWLEDGED"
+	OGAFeedbackProvided   SimpleFormState = "OGA_FEEDBACK_PROVIDED"
 	OGAReviewed           SimpleFormState = "OGA_REVIEWED"
 	SubmissionFailed      SimpleFormState = "SUBMISSION_FAILED"
 )
@@ -100,6 +102,15 @@ type CallbackConfig struct {
 	Response   *Response         `json:"response,omitempty"`
 }
 
+// OGAFeedbackEntry is a single round of OGA feedback, stored as an append-only log.
+// Content holds the full request payload as-is, allowing new fields to be introduced
+// by callers without requiring changes to this struct.
+type OGAFeedbackEntry struct {
+	Content   map[string]any `json:"content"`
+	Timestamp time.Time      `json:"timestamp"`
+	Round     int            `json:"round"`
+}
+
 // SimpleFormResult represents the response data for form operations
 type SimpleFormResult struct {
 	FormID   string          `json:"formId,omitempty"`
@@ -121,20 +132,25 @@ type SimpleForm struct {
 //
 // State graph:
 //
-//	""                ──START──────────────────────► INITIALIZED       [no task state change]
-//	INITIALIZED       ──DRAFT_FORM─────────────────► DRAFT             [IN_PROGRESS]
-//	INITIALIZED       ──SUBMIT_FORM_COMPLETE────────► SUBMITTED         [COMPLETED]
-//	INITIALIZED       ──SUBMIT_FORM_AWAIT_OGA───────► OGA_ACKNOWLEDGED  [IN_PROGRESS]
-//	INITIALIZED       ──SUBMIT_FORM_FAILED─────────► SUBMISSION_FAILED  [IN_PROGRESS]
-//	DRAFT             ──DRAFT_FORM─────────────────► DRAFT             [IN_PROGRESS]
-//	DRAFT             ──SUBMIT_FORM_COMPLETE────────► SUBMITTED         [COMPLETED]
-//	DRAFT             ──SUBMIT_FORM_AWAIT_OGA───────► OGA_ACKNOWLEDGED  [IN_PROGRESS]
-//	DRAFT             ──SUBMIT_FORM_FAILED─────────► SUBMISSION_FAILED  [IN_PROGRESS]
-//	SUBMISSION_FAILED ──DRAFT_FORM─────────────────► DRAFT             [IN_PROGRESS]
-//	SUBMISSION_FAILED ──SUBMIT_FORM_COMPLETE────────► SUBMITTED         [COMPLETED]
-//	SUBMISSION_FAILED ──SUBMIT_FORM_AWAIT_OGA───────► OGA_ACKNOWLEDGED  [IN_PROGRESS]
-//	OGA_ACKNOWLEDGED  ──OGA_VERIFICATION_APPROVED──► OGA_REVIEWED      [COMPLETED]
-//	OGA_ACKNOWLEDGED  ──OGA_VERIFICATION_REJECTED──► OGA_REVIEWED      [FAILED]
+//	""                    ──START──────────────────────────► INITIALIZED          [no task state change]
+//	INITIALIZED           ──SAVE_AS_DRAFT──────────────────► DRAFT                [IN_PROGRESS]
+//	INITIALIZED           ──SUBMIT_FORM_COMPLETE────────────► SUBMITTED            [COMPLETED]
+//	INITIALIZED           ──SUBMIT_FORM_AWAIT_OGA───────────► OGA_ACKNOWLEDGED     [IN_PROGRESS]
+//	INITIALIZED           ──SUBMIT_FORM_FAILED─────────────► SUBMISSION_FAILED    [IN_PROGRESS]
+//	DRAFT                 ──SAVE_AS_DRAFT──────────────────► DRAFT                [IN_PROGRESS]
+//	DRAFT                 ──SUBMIT_FORM_COMPLETE────────────► SUBMITTED            [COMPLETED]
+//	DRAFT                 ──SUBMIT_FORM_AWAIT_OGA───────────► OGA_ACKNOWLEDGED     [IN_PROGRESS]
+//	DRAFT                 ──SUBMIT_FORM_FAILED─────────────► SUBMISSION_FAILED    [IN_PROGRESS]
+//	SUBMISSION_FAILED     ──SAVE_AS_DRAFT──────────────────► DRAFT                [IN_PROGRESS]
+//	SUBMISSION_FAILED     ──SUBMIT_FORM_COMPLETE────────────► SUBMITTED            [COMPLETED]
+//	SUBMISSION_FAILED     ──SUBMIT_FORM_AWAIT_OGA───────────► OGA_ACKNOWLEDGED     [IN_PROGRESS]
+//	OGA_ACKNOWLEDGED      ──OGA_VERIFICATION_APPROVED───────► OGA_REVIEWED         [COMPLETED]
+//	OGA_ACKNOWLEDGED      ──OGA_VERIFICATION_REJECTED───────► OGA_REVIEWED         [FAILED]
+//	OGA_ACKNOWLEDGED      ──OGA_VERIFICATION_FEEDBACK───────► OGA_FEEDBACK_PROVIDED [IN_PROGRESS]
+//	OGA_FEEDBACK_PROVIDED ──SUBMIT_FORM_AWAIT_OGA───────────► OGA_ACKNOWLEDGED     [IN_PROGRESS]
+//	OGA_FEEDBACK_PROVIDED ──SUBMIT_FORM_FAILED─────────────► SUBMISSION_FAILED    [IN_PROGRESS]
+//	OGA_FEEDBACK_PROVIDED ──OGA_VERIFICATION_APPROVED───────► OGA_REVIEWED         [COMPLETED]
+//	OGA_FEEDBACK_PROVIDED ──OGA_VERIFICATION_REJECTED───────► OGA_REVIEWED         [FAILED]
 func NewSimpleFormFSM() *PluginFSM {
 	return NewPluginFSM(map[TransitionKey]TransitionOutcome{
 		{"", FSMActionStart}: {string(SimpleFormInitialized), ""},
@@ -150,12 +166,17 @@ func NewSimpleFormFSM() *PluginFSM {
 		{string(SimpleFormInitialized), simpleFormFSMSubmitAwaitOGA}: {string(OGAAcknowledged), InProgress},
 		{string(TraderSavedAsDraft), simpleFormFSMSubmitAwaitOGA}:    {string(OGAAcknowledged), InProgress},
 		{string(SubmissionFailed), simpleFormFSMSubmitAwaitOGA}:      {string(OGAAcknowledged), InProgress},
+		{string(OGAFeedbackProvided), simpleFormFSMSubmitAwaitOGA}:   {string(OGAAcknowledged), InProgress},
 
 		{string(SimpleFormInitialized), simpleFormFSMSubmitFailed}: {string(SubmissionFailed), InProgress},
 		{string(TraderSavedAsDraft), simpleFormFSMSubmitFailed}:    {string(SubmissionFailed), InProgress},
+		{string(OGAFeedbackProvided), simpleFormFSMSubmitFailed}:   {string(SubmissionFailed), InProgress},
 
-		{string(OGAAcknowledged), simpleFormFSMOgaApproved}: {string(OGAReviewed), Completed},
-		{string(OGAAcknowledged), simpleFormFSMOgaRejected}: {string(OGAReviewed), Failed},
+		{string(OGAAcknowledged), simpleFormFSMOgaApproved}:     {string(OGAReviewed), Completed},
+		{string(OGAAcknowledged), simpleFormFSMOgaRejected}:     {string(OGAReviewed), Failed},
+		{string(OGAAcknowledged), SimpleFormActionOgaFeedback}:  {string(OGAFeedbackProvided), InProgress},
+		{string(OGAFeedbackProvided), simpleFormFSMOgaApproved}: {string(OGAReviewed), Completed},
+		{string(OGAFeedbackProvided), simpleFormFSMOgaRejected}: {string(OGAReviewed), Failed},
 	})
 }
 
@@ -209,6 +230,9 @@ func (s *SimpleForm) GetRenderInfo(ctx context.Context) (*ApiResponse, error) {
 	}
 	if s.config.Callback != nil {
 		s.attachFormDisplay(ctx, content, "ogaResponse", displayFormID(s.config.Callback.Response), "ogaReviewForm")
+	}
+	if feedbackData, err := s.api.ReadFromLocalStore("ogaFeedback"); err == nil && feedbackData != nil {
+		content["ogaFeedback"] = feedbackData
 	}
 
 	return &ApiResponse{
@@ -292,6 +316,11 @@ func (s *SimpleForm) resolveAction(request *ExecutionRequest) (string, error) {
 		}
 		return simpleFormFSMOgaRejected, nil
 
+	case SimpleFormActionOgaFeedback:
+		// OGA_VERIFICATION_FEEDBACK is a distinct action — no resolution needed,
+		// it maps directly to the feedback FSM edge.
+		return SimpleFormActionOgaFeedback, nil
+
 	default:
 		return request.Action, nil
 	}
@@ -308,6 +337,8 @@ func (s *SimpleForm) dispatch(ctx context.Context, action string, content any) (
 		return s.ogaApprovedHandler(ctx, content)
 	case simpleFormFSMOgaRejected:
 		return s.ogaRejectedHandler(ctx, content)
+	case SimpleFormActionOgaFeedback:
+		return s.ogaFeedbackHandler(ctx, content)
 	default:
 		return nil, fmt.Errorf("unhandled FSM action: %q", action)
 	}
@@ -407,6 +438,10 @@ func (s *SimpleForm) submitHandler(ctx context.Context, content any) (*Execution
 	}
 	if s.config.Submission != nil && s.config.Submission.Request != nil {
 		requestPayload["meta"] = s.config.Submission.Request.Meta
+	}
+
+	if history, err := s.readOGAFeedbackHistory(); err == nil && len(history) > 0 {
+		requestPayload["ogaFeedbackHistory"] = history
 	}
 
 	responseData, err := s.sendFormSubmission(submissionUrl, requestPayload)
@@ -528,6 +563,65 @@ func (s *SimpleForm) buildLocalContext() map[string]any {
 	return ctx
 }
 
+// ogaFeedbackHandler handles OGA_VERIFICATION_FEEDBACK: appends a new OGAFeedbackEntry
+// (with timestamp and round number) to the feedback history in local store.
+//
+// Expected content shape:
+//
+//	{ "feedback": "Please correct the HS code on item 3." }
+//
+// The entire content object is stored atomically, so callers can introduce new
+// fields (e.g. severity, affected fields) without requiring handler changes.
+func (s *SimpleForm) ogaFeedbackHandler(_ context.Context, content any) (*ExecutionResponse, error) {
+	data, err := s.parseFormData(content)
+	if err != nil {
+		return nil, fmt.Errorf("invalid feedback data: %w", err)
+	}
+
+	// TODO: Remove hardcoded validation logic, after introducing generalized schema based validation
+	if feedback, _ := data["feedback"].(string); strings.TrimSpace(feedback) == "" {
+		return nil, fmt.Errorf("feedback field is required and must not be empty")
+	}
+
+	history, err := s.readOGAFeedbackHistory()
+	if err != nil {
+		slog.Warn("failed to read OGA feedback history, starting fresh", "formId", s.config.FormID, "error", err)
+		history = nil
+	}
+
+	history = append(history, OGAFeedbackEntry{
+		Content:   data,
+		Timestamp: time.Now().UTC(),
+		Round:     len(history) + 1,
+	})
+
+	if err := s.api.WriteToLocalStore("ogaFeedback", history); err != nil {
+		return nil, err
+	}
+	return &ExecutionResponse{
+		ApiResponse: &ApiResponse{Success: true},
+		Message:     "OGA feedback provided, awaiting trader correction",
+	}, nil
+}
+
+// readOGAFeedbackHistory reads and deserializes the OGA feedback history from local store.
+// It handles the JSON round-trip that occurs on a cache miss ([]interface{} → []OGAFeedbackEntry).
+func (s *SimpleForm) readOGAFeedbackHistory() ([]OGAFeedbackEntry, error) {
+	raw, err := s.api.ReadFromLocalStore("ogaFeedback")
+	if err != nil || raw == nil {
+		return nil, err
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal ogaFeedback from store: %w", err)
+	}
+	var history []OGAFeedbackEntry
+	if err := json.Unmarshal(b, &history); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal ogaFeedback history: %w", err)
+	}
+	return history, nil
+}
+
 // parseAndStoreOgaResponse parses the OGA payload and persists it to local store.
 func (s *SimpleForm) parseAndStoreOgaResponse(content any) (map[string]any, error) {
 	verificationData, err := s.parseFormData(content)
@@ -547,7 +641,7 @@ func (s *SimpleForm) resolveFormData(ctx context.Context, state SimpleFormState)
 	switch state {
 	case SimpleFormInitialized:
 		return s.prepopulateFormData(ctx, s.config.FormData)
-	case TraderSavedAsDraft, TraderSubmitted, OGAAcknowledged, OGAReviewed, SubmissionFailed:
+	case TraderSavedAsDraft, TraderSubmitted, OGAAcknowledged, OGAFeedbackProvided, OGAReviewed, SubmissionFailed:
 		return s.api.ReadFromLocalStore("trader:form")
 	default:
 		return s.config.FormData, nil
