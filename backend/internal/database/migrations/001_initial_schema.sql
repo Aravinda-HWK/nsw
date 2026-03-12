@@ -216,6 +216,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_template_maps_unique
 	ON workflow_template_maps (hs_code_id, consignment_flow);
 
 -- ============================================================================
+-- Customs House Agents (CHA)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS customs_house_agents
+(
+	id         uuid      DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
+	name       varchar(255)                        NOT NULL,
+	description text,
+	email      varchar(255),
+	created_at timestamptz DEFAULT now()           NOT NULL,
+	updated_at timestamptz DEFAULT now()           NOT NULL
+);
+
+COMMENT ON TABLE customs_house_agents IS 'Clearing House Agents / Customs House Agents for consignment assignment';
+
+-- ============================================================================
 -- Consignment workflow instances
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS consignments
@@ -228,15 +243,18 @@ CREATE TABLE IF NOT EXISTS consignments
 	trader_id varchar(100) NOT NULL,
 	state varchar(50) NOT NULL
 		CONSTRAINT consignments_state_check
-			CHECK ((state)::text = ANY ((ARRAY['IN_PROGRESS'::character varying, 'FINISHED'::character varying])::text[])),
+			CHECK ((state)::text = ANY (ARRAY['INITIALIZED'::character varying, 'IN_PROGRESS'::character varying, 'FINISHED'::character varying])),
 	items jsonb NOT NULL,
 	global_context jsonb NOT NULL,
 	created_at timestamp with time zone DEFAULT now() NOT NULL,
 	updated_at timestamp with time zone DEFAULT now() NOT NULL,
-	end_node_id uuid
+	end_node_id uuid,
+	cha_id uuid REFERENCES customs_house_agents (id)
 );
 
 COMMENT ON TABLE consignments IS 'Consignment records for import/export workflows';
+
+COMMENT ON COLUMN consignments.cha_id IS 'Assigned Customs House Agent (CHA); set at Stage 1 by Trader';
 
 CREATE INDEX IF NOT EXISTS idx_consignments_trader_id
 	ON consignments (trader_id);
@@ -255,6 +273,9 @@ CREATE INDEX IF NOT EXISTS idx_consignments_items
 
 CREATE INDEX IF NOT EXISTS idx_consignments_global_context
 	ON consignments USING gin (global_context);
+
+CREATE INDEX IF NOT EXISTS idx_consignments_cha_id
+	ON consignments (cha_id);
 
 -- ============================================================================
 -- Pre-consignment template definitions
@@ -383,20 +404,20 @@ CREATE INDEX IF NOT EXISTS idx_pre_consignments_trader_id_state
 	ON pre_consignments (trader_id, state);
 
 -- ============================================================================
--- Trader context registry
+-- User context registry
 -- ============================================================================
-CREATE TABLE IF NOT EXISTS trader_contexts
+CREATE TABLE IF NOT EXISTS user_contexts
 (
-	trader_id varchar(100) NOT NULL
+	user_id varchar(100) NOT NULL
 		PRIMARY KEY,
-	trader_context jsonb NOT NULL,
+	user_context jsonb NOT NULL,
 	created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
 	updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 
-COMMENT ON TABLE trader_contexts IS 'Stores trader context information including metadata in JSON format. This table is used for trader identification and authorization.';
+COMMENT ON TABLE user_contexts IS 'Stores user context information including metadata in JSON format. This table is used for user identification and authorization.';
 
-COMMENT ON COLUMN trader_contexts.trader_id IS 'Unique trader identifier (e.g., TRADER-001)';
+COMMENT ON COLUMN user_contexts.user_id IS 'Unique user identifier (e.g., TRADER-001)';
 
-COMMENT ON COLUMN trader_contexts.trader_context IS 'JSONB field containing trader metadata and context information';
+COMMENT ON COLUMN user_contexts.user_context IS 'JSONB field containing user metadata and context information';
 

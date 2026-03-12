@@ -167,7 +167,7 @@ func TestManager_HandleGetConsignmentByID(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
-func TestManager_HandleGetConsignmentsByTraderID(t *testing.T) {
+func TestManager_HandleGetConsignments(t *testing.T) {
 	db, sqlMock := setupTestDB(t)
 	mockTM := new(MockTaskManager)
 	ch := make(chan taskManager.WorkflowManagerNotification, 10)
@@ -175,7 +175,7 @@ func TestManager_HandleGetConsignmentsByTraderID(t *testing.T) {
 	sqlMock.MatchExpectationsInOrder(false)
 
 	req, _ := http.NewRequest("GET", "/api/v1/consignments", nil)
-	w := parseHTTPResponse(t, manager.HandleGetConsignmentsByTraderID, req)
+	w := parseHTTPResponse(t, manager.HandleGetConsignments, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
@@ -208,11 +208,12 @@ func TestManager_HandleGetPreConsignmentByID(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
-func withAuthContext(ctx context.Context, traderID string) context.Context {
+func withAuthContext(ctx context.Context, userID string) context.Context {
 	authCtx := &auth.AuthContext{
-		TraderContext: &auth.TraderContext{
-			TraderID:      traderID,
-			TraderContext: json.RawMessage(`{}`),
+		UserID: userID,
+		UserContext: &auth.UserContext{
+			UserID:      userID,
+			UserContext: json.RawMessage(`{}`),
 		},
 	}
 	return context.WithValue(ctx, auth.AuthContextKey, authCtx)
