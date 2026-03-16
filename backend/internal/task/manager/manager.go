@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"sync"
 
 	"github.com/google/uuid"
@@ -51,11 +50,9 @@ type TaskManager interface {
 	// InitTask initializes and executes a task using the provided TaskContext.
 	InitTask(ctx context.Context, request InitTaskRequest) (*InitTaskResponse, error)
 
-	// HandleExecuteTask is an HTTP handler for executing a task via POST request
-	HandleExecuteTask(w http.ResponseWriter, r *http.Request)
-
-	// HandleGetTask is an HTTP handler for retrieving a task via GET request
-	HandleGetTask(w http.ResponseWriter, r *http.Request)
+	// Core Domain Methods
+	ExecuteTask(ctx context.Context, req ExecuteTaskRequest) (*plugin.ExecutionResponse, error)
+	GetTaskRenderInfo(ctx context.Context, taskID string) (*plugin.ApiResponse, error)
 
 	// RegisterUpstreamCallback registers the callback used when task state changes.
 	RegisterUpstreamCallback(callback WorkflowUpdateHandler)
@@ -102,95 +99,46 @@ func (tm *taskManager) RegisterUpstreamCallback(callback WorkflowUpdateHandler) 
 	tm.workflowUpdateHandler = callback
 }
 
-// HandleGetTask is an HTTP handler for fetching task information via GET request
-func (tm *taskManager) HandleGetTask(w http.ResponseWriter, r *http.Request) {
-
-	taskId := r.PathValue("id")
-
-	if taskId == "" {
-		writeJSONError(w, http.StatusBadRequest, "taskId is required")
-		return
-	}
-
-	ctx := r.Context()
-
-	taskUUID, err := uuid.Parse(taskId)
-
+// GetTaskRenderInfo retrieves task rendering info (core logic)
+func (tm *taskManager) GetTaskRenderInfo(ctx context.Context, taskID string) (*plugin.ApiResponse, error) {
+	taskUUID, err := uuid.Parse(taskID)
 	if err != nil || taskUUID == uuid.Nil {
-		writeJSONError(w, http.StatusBadRequest, "taskId is invalid")
-		return
+		return nil, fmt.Errorf("taskID is invalid: %w", err)
 	}
 
 	activeTask, err := tm.getTask(ctx, taskUUID)
 	if err != nil {
-		writeJSONError(w, http.StatusNotFound, fmt.Sprintf("task %s not found: %v", taskId, err))
-		return
+		return nil, fmt.Errorf("task %s not found: %w", taskID, err)
 	}
 
 	result, err := activeTask.GetRenderInfo(ctx)
-
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get render info for task %s: %v", taskId, err))
+		return nil, fmt.Errorf("failed to get render info for task %s: %w", taskID, err)
 	}
 
-	writeJSONResponse(w, http.StatusOK, result)
+	return result, nil
 }
 
-// HandleExecuteTask is an HTTP handler for executing a task via POST request
-func (tm *taskManager) HandleExecuteTask(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req ExecuteTaskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
-		return
-	}
-
-	// Validate required fields
+// ExecuteTask is the core logic for executing a task
+func (tm *taskManager) ExecuteTask(ctx context.Context, req ExecuteTaskRequest) (*plugin.ExecutionResponse, error) {
 	if req.TaskID == uuid.Nil {
-		writeJSONError(w, http.StatusBadRequest, "task_id is required")
-		return
+		return nil, fmt.Errorf("task_id is required")
 	}
 
-	// Get task from the store
-	ctx := r.Context()
 	activeTask, err := tm.getTask(ctx, req.TaskID)
 	if err != nil {
-		writeJSONError(w, http.StatusNotFound, fmt.Sprintf("task %s not found: %v", req.TaskID, err))
-		return
+		return nil, fmt.Errorf("task %s not found: %w", req.TaskID, err)
 	}
 
-	// Execute task
 	result, err := tm.execute(ctx, activeTask, req.Payload)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to execute task",
 			"taskID", req.TaskID,
 			"workflowID", req.WorkflowID,
 			"error", err)
-		writeJSONError(w, http.StatusInternalServerError, "Failed to execute task: "+err.Error())
-		return
+		return nil, fmt.Errorf("failed to execute task: %w", err)
 	}
-
-	// Return success response
-	writeJSONResponse(w, http.StatusOK, result.ApiResponse)
-}
-
-func writeJSONResponse(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		slog.Error("failed to encode JSON response", "error", err)
-	}
-}
-
-func writeJSONError(w http.ResponseWriter, status int, message string) {
-	writeJSONResponse(w, status, ExecuteTaskResponse{
-		Success: false,
-		Error:   message,
-	})
+	return result, nil
 }
 
 // InitTask initializes a new task container, creates its execution record,
