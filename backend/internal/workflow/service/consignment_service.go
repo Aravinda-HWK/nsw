@@ -127,7 +127,7 @@ func (s *ConsignmentService) InitializeConsignmentByID(
 		// Currently, assumes that there is only one HS code selected.
 		if len(hsCodeIDs) > 1 {
 			tx.Rollback()
-			return nil, fmt.Errorf("V2 currently supports only one HS code")
+			return nil, fmt.Errorf("v2 currently supports only one HS code")
 		}
 
 		wtV2, err := s.templateProvider.GetWorkflowTemplateByHSCodeIDAndFlowV2(ctx, hsCodeIDs[0], consignment.Flow)
@@ -574,15 +574,17 @@ func (s *ConsignmentService) buildConsignmentDetailDTO(
 	consignment *model.Consignment,
 	workflowV1 *model.Workflow,
 	workflowV2 *workflowManagerV2.WorkflowInstance,
-	hsLoader *hsCodeBatchLoader) (*model.ConsignmentDetailDTO, error) {
+	hsLoader *hsCodeBatchLoader,
+) (*model.ConsignmentDetailDTO, error) {
 	itemResponseDTOs, err := s.buildConsignmentItemResponseDTOs(consignment.Items, hsLoader)
 	if err != nil {
 		return nil, err
 	}
 
-	var nodeResponseDTOs []model.WorkflowNodeResponseDTO
+	nodeResponseDTOs := make([]model.WorkflowNodeResponseDTO, 0)
+	edgeResponseDTOs := make([]model.WorkflowEdgeResponseDTO, 0)
+
 	if workflowV1 != nil {
-		nodeResponseDTOs = make([]model.WorkflowNodeResponseDTO, 0, len(workflowV1.WorkflowNodes))
 		for _, node := range workflowV1.WorkflowNodes {
 			nodeResponseDTOs = append(nodeResponseDTOs, model.WorkflowNodeResponseDTO{
 				ID:        node.ID,
@@ -614,7 +616,6 @@ func (s *ConsignmentService) buildConsignmentDetailDTO(
 		for _, taskTemplate := range taskTemplates {
 			taskTemplateMap[taskTemplate.ID] = taskTemplate
 		}
-		nodeResponseDTOs = make([]model.WorkflowNodeResponseDTO, 0, len(workflowV2.NodeInfo))
 		for _, node := range workflowV2.NodeInfo {
 			var taskName, taskDescription, taskType string
 			var nodeState model.WorkflowNodeState
@@ -654,9 +655,14 @@ func (s *ConsignmentService) buildConsignmentDetailDTO(
 				DependsOn: []string{}, // TODO: should be removed or should be populated based on the workflow definition (not currently stored in DB for v2 workflows)
 			})
 		}
-	}
-	if nodeResponseDTOs == nil {
-		nodeResponseDTOs = []model.WorkflowNodeResponseDTO{}
+		for _, edge := range workflowV2.Edges {
+			edgeResponseDTOs = append(edgeResponseDTOs, model.WorkflowEdgeResponseDTO{
+				ID:        edge.ID,
+				SourceID:  edge.SourceID,
+				TargetID:  edge.TargetID,
+				Condition: edge.Condition,
+			})
+		}
 	}
 
 	return &model.ConsignmentDetailDTO{
@@ -669,6 +675,7 @@ func (s *ConsignmentService) buildConsignmentDetailDTO(
 		CreatedAt:     consignment.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:     consignment.UpdatedAt.Format(time.RFC3339),
 		WorkflowNodes: nodeResponseDTOs,
+		Edges:         edgeResponseDTOs,
 	}, nil
 }
 
