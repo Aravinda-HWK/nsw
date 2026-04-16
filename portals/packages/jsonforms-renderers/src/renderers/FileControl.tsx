@@ -51,10 +51,20 @@ function formatAccept(accept: string): string {
         .split(',')
         .map(t => {
             t = t.trim();
-            if (t === 'image/*') return 'Images';
-            if (t === 'application/pdf') return 'PDF';
-            if (t.startsWith('.')) return t.toUpperCase();
-            return t.split('/').pop()?.toUpperCase() ?? t;
+
+            // Handle wildcard types like image/*
+            if (t.endsWith('/*')) {
+                return t.split('/')[0].toUpperCase() + 'S';
+            }
+
+            // Handle extensions like .pdf
+            if (t.startsWith('.')) {
+                return t.slice(1).toUpperCase();
+            }
+
+            // Handle MIME types like application/pdf
+            const subtype = t.split('/')[1];
+            return subtype ? subtype.toUpperCase() : t;
         })
         .join(', ');
 }
