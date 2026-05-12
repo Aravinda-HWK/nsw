@@ -38,6 +38,9 @@ CREATE TABLE task_workflow_tasks (
 CREATE INDEX idx_task_workflow_tasks_parent_workflow_id ON task_workflow_tasks (parent_workflow_id);
 CREATE INDEX idx_task_workflow_tasks_task_workflow_id   ON task_workflow_tasks (task_workflow_id);
 CREATE INDEX idx_task_workflow_tasks_status             ON task_workflow_tasks (status);
+CREATE INDEX idx_task_workflow_tasks_subtask_node_id    ON task_workflow_tasks (subtask_node_id);  
+CREATE INDEX idx_task_workflow_tasks_parent_node_id     ON task_workflow_tasks (parent_node_id);  
+
 
 COMMENT ON TABLE  task_workflow_tasks IS 'TaskRecords managed by nsw-task-flow orchestrator (1 row per task instance)';
 COMMENT ON COLUMN task_workflow_tasks.task_id            IS 'Unique task instance identifier (task-XXXXXXXX)';

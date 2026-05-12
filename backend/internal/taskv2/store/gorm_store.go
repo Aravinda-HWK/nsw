@@ -60,8 +60,8 @@ type taskRow struct {
 	SubTaskNodeID        string     `gorm:"column:subtask_node_id"`
 	ActiveTaskTemplateID string     `gorm:"column:active_task_template_id"`
 	Data                 jsonbBytes `gorm:"column:data;type:jsonb;not null"`
-	CreatedAt            time.Time  `gorm:"column:created_at"`
-	UpdatedAt            time.Time  `gorm:"column:updated_at"`
+	CreatedAt            time.Time  `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt            time.Time  `gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (taskRow) TableName() string { return "task_workflow_tasks" }
@@ -84,11 +84,6 @@ func (s *GormTaskStore) SaveTask(record tfstore.TaskRecord) {
 		slog.Error("taskv2 store: failed to marshal record", "taskId", record.TaskID, "error", err)
 		return
 	}
-	row.UpdatedAt = time.Now().UTC()
-	if row.CreatedAt.IsZero() {
-		row.CreatedAt = row.UpdatedAt
-	}
-
 	if err := s.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "task_id"}},
 		UpdateAll: true,
