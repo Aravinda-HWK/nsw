@@ -1,7 +1,7 @@
 github.com/DATA-DOG/go-sqlmock v1.5.2 h1:OcvFkGmslmlZibjAjaHm3L//6LiuBgolP7OputlJIzU=
 github.com/DATA-DOG/go-sqlmock v1.5.2/go.mod h1:88MAG/4G7SMwSE3CeA0ZKzrT5CiOU3OJ+JlNzwDqpNU=
-github.com/OpenNSW/go-temporal-workflow v0.3.2 h1:a5+PYt09618/MnC+5FjP9luqNJOCUZ71QZCWV4jdI7Q=
-github.com/OpenNSW/go-temporal-workflow v0.3.2/go.mod h1:YryMiRQ9MBkQUpAz8CwYnW56uFEYqb/cmmOd/YaYmao=
+github.com/OpenNSW/go-temporal-workflow v0.3.3 h1:Zed6UOxZdDCMR2xPcr2fRzAbZOqSHDYHyp7tvYRW9yI=
+github.com/OpenNSW/go-temporal-workflow v0.3.3/go.mod h1:YryMiRQ9MBkQUpAz8CwYnW56uFEYqb/cmmOd/YaYmao=
 github.com/OpenNSW/nsw-task-flow v0.0.0-20260508034617-fd3134f73645 h1:2YCU4Usk2gwnMCFSrdWOLwXjnY8kHC1SrE+Sp42pP2o=
 github.com/OpenNSW/nsw-task-flow v0.0.0-20260508034617-fd3134f73645/go.mod h1:Nzl3PVCLDfibuMfauF0oU59yk1U5drcdS0AgqmKu/Zk=
 github.com/aws/aws-sdk-go-v2 v1.41.7 h1:DWpAJt66FmnnaRIOT/8ASTucrvuDPZASqhhLey6tLY8=

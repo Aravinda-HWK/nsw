@@ -27,6 +27,7 @@ import (
 
 	customplugins "github.com/OpenNSW/nsw/internal/taskv2/plugins"
 
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 )
 
@@ -99,12 +100,20 @@ func NewRuntime(cfg Config) (*Runtime, error) {
 	// Resolve the cycle by capturing tm via closure and assigning it after construction.
 	var tm *orchestrator.TaskManager
 
-	parentTaskHandler := func(payload engine.TaskPayload) error {
+	// go-temporal-workflow v0.3.3 changed the handler signature to return
+	// (map[string]any, error). The dispatch is asynchronous — TaskManager
+	// drives the sub-workflow and wakes the parent via TaskDone — so we
+	// return ErrResultPending after a successful kick-off so the engine
+	// pauses the activity instead of completing it synchronously.
+	parentTaskHandler := func(payload engine.TaskPayload) (map[string]any, error) {
 		slog.Info("taskv2 parent: TASK node activated", "node", payload.NodeID, "template", payload.TaskTemplateID)
 		if tm == nil {
-			return fmt.Errorf("taskv2 parent handler invoked before TaskManager was wired")
+			return nil, fmt.Errorf("taskv2 parent handler invoked before TaskManager was wired")
 		}
-		return tm.StartTask(payload)
+		if err := tm.StartTask(payload); err != nil {
+			return nil, err
+		}
+		return nil, activity.ErrResultPending
 	}
 	parentCompletion := func(workflowID string, finalVariables map[string]any) error {
 		slog.Info("taskv2 parent: workflow completed", "workflowId", workflowID, "finalVariables", finalVariables)
@@ -117,12 +126,15 @@ func NewRuntime(cfg Config) (*Runtime, error) {
 	}
 	parent := engine.NewTemporalManager(cfg.TemporalClient, parentTaskQueue, parentTaskHandler, parentCompletion)
 
-	taskHandler := func(payload engine.TaskPayload) error {
+	taskHandler := func(payload engine.TaskPayload) (map[string]any, error) {
 		slog.Info("taskv2 task: step activated", "node", payload.NodeID, "template", payload.TaskTemplateID)
 		if tm == nil {
-			return fmt.Errorf("taskv2 task handler invoked before TaskManager was wired")
+			return nil, fmt.Errorf("taskv2 task handler invoked before TaskManager was wired")
 		}
-		return tm.StartSubTask(payload)
+		if err := tm.StartSubTask(payload); err != nil {
+			return nil, err
+		}
+		return nil, activity.ErrResultPending
 	}
 	taskCompletion := func(workflowID string, finalVariables map[string]any) error {
 		slog.Info("taskv2 task: sub-workflow completed", "workflowId", workflowID)
