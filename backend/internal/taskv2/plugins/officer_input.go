@@ -62,10 +62,10 @@ func (p *OfficerInputPlugin) Execute(ctx pluginContext, configRaw json.RawMessag
 		return nil
 	}
 
-	body := buildSubmissionBody(ctx.Record, cfg.TaskCode, p.client.callbackTasksURL())
+	body := buildSubmissionBody(ctx.Record, &cfg.TaskCode, p.client.callbackTasksURL())
 
 	slog.Info("taskv2 officer_input: dispatching to OGA portal",
-		"taskId", ctx.Record.TaskID, "url", cfg.ExternalURL, "taskCode", cfg.TaskCode)
+		"taskId", ctx.Record.TaskID, "url", cfg.ExternalURL, "taskCode", &cfg.TaskCode)
 
 	return p.client.post(ctx.Context, cfg.ExternalURL, body)
 }

@@ -1,12 +1,9 @@
 package plugins
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 )
 
 // APICallPlugin implements the "generic_api_call" FIRE_AND_FORGET task type.
@@ -37,36 +34,10 @@ func (p *APICallPlugin) Execute(ctx pluginContext, configRaw json.RawMessage) er
 
 	ctx.Record.Status = "DISPATCHED"
 
-	body := buildSubmissionBody(ctx.Record, "", p.client.callbackTasksURL())
-	bodyBytes, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("api_call: marshal body: %w", err)
-	}
+	body := buildSubmissionBody(ctx.Record, nil, p.client.callbackTasksURL())
 
-	req, err := http.NewRequestWithContext(ctx.Context, http.MethodPost, cfg.URL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		// TODO: retry failed submissions
-		slog.Warn("taskv2 api_call: failed to build request", "taskId", ctx.Record.TaskID, "url", cfg.URL, "error", err)
-		return nil
-	}
-	req.Header.Set("Content-Type", "application/json")
+	slog.Info("taskv2 api_call: dispatching to external API",
+		"taskId", ctx.Record.TaskID, "url", cfg.URL)
 
-	resp, err := p.client.httpClient.Do(req)
-	if err != nil {
-		// TODO: retry failed submissions
-		slog.Warn("taskv2 api_call: dispatch failed", "taskId", ctx.Record.TaskID, "url", cfg.URL, "error", err)
-		return nil
-	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			slog.Warn("taskv2 api_call: failed to close response body", "url", cfg.URL, "error", closeErr)
-		}
-	}()
-
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-	slog.Info("taskv2 api_call: dispatched",
-		"taskId", ctx.Record.TaskID, "url", cfg.URL,
-		"status", resp.StatusCode, "response", string(respBody))
-
-	return nil
+	return p.client.post(ctx.Context, cfg.URL, body)
 }

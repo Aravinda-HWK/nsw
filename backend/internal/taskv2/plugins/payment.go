@@ -22,7 +22,6 @@ func (p *PaymentPlugin) Name() string { return "generic_payment" }
 
 type paymentConfig struct {
 	PaymentServiceURL string `json:"payment_service_url"`
-	TaskCode          string `json:"task_code,omitempty"`
 }
 
 func (p *PaymentPlugin) Execute(ctx pluginContext, configRaw json.RawMessage) error {
@@ -38,14 +37,14 @@ func (p *PaymentPlugin) Execute(ctx pluginContext, configRaw json.RawMessage) er
 	// PAYMENT_FAILED callback — there is no officer-side review for payment.
 	if cfg.PaymentServiceURL == "" {
 		slog.Info("taskv2 payment: no payment_service_url configured, skipping dispatch",
-			"taskId", ctx.Record.TaskID, "taskCode", cfg.TaskCode)
+			"taskId", ctx.Record.TaskID)
 		return nil
 	}
 
-	body := buildSubmissionBody(ctx.Record, cfg.TaskCode, p.client.callbackTasksURL())
+	body := buildSubmissionBody(ctx.Record, nil, p.client.callbackTasksURL())
 
 	slog.Info("taskv2 payment: dispatching to payment service",
-		"taskId", ctx.Record.TaskID, "url", cfg.PaymentServiceURL, "taskCode", cfg.TaskCode)
+		"taskId", ctx.Record.TaskID, "url", cfg.PaymentServiceURL)
 
 	return p.client.post(ctx.Context, cfg.PaymentServiceURL, body)
 }

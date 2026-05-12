@@ -50,10 +50,10 @@ func (p *ExternalReviewPlugin) Execute(ctx pluginContext, configRaw json.RawMess
 	}
 	ctx.Record.Status = "QUEUED_EXTERNALLY"
 
-	body := buildSubmissionBody(ctx.Record, cfg.TaskCode, p.client.callbackTasksURL())
+	body := buildSubmissionBody(ctx.Record, &cfg.TaskCode, p.client.callbackTasksURL())
 
 	slog.Info("taskv2 external_review: dispatching to OGA portal",
-		"taskId", ctx.Record.TaskID, "url", cfg.ExternalURL, "taskCode", cfg.TaskCode)
+		"taskId", ctx.Record.TaskID, "url", cfg.ExternalURL, "taskCode", &cfg.TaskCode)
 
 	return p.client.post(ctx.Context, cfg.ExternalURL, body)
 }
@@ -65,9 +65,9 @@ func (p *ExternalReviewPlugin) Render(configRaw json.RawMessage, record tfstore.
 }
 
 // buildSubmissionBody constructs the full envelope the OGA portal expects.
-func buildSubmissionBody(record *tfstore.TaskRecord, taskCode, callbackURL string) map[string]any {
-	if taskCode == "" {
-		taskCode = record.ActiveTaskTemplateID
+func buildSubmissionBody(record *tfstore.TaskRecord, taskCode *string, callbackURL string) map[string]any {
+	if taskCode == nil || *taskCode == "" {
+		taskCode = &record.ActiveTaskTemplateID
 	}
 	return map[string]any{
 		"taskCode":             taskCode,

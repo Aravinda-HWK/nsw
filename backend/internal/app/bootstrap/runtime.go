@@ -1,8 +1,8 @@
 // Package runtime wires the nsw-task-flow TaskManager, plugin registry,
 // template registry, and the two Temporal managers (parent + task) needed
-// for the demo's hierarchical execution model.
+// for hierarchical workflow execution.
 //
-// Layout mirrors nsw-task-flow/demo/main.go:
+// Architecture:
 //
 //	[Parent Workflow Temporal Manager]   queue: nsw-parent-workflow-queue
 //	            │ activates TASK node
@@ -20,10 +20,10 @@ import (
 	"log/slog"
 	"maps"
 
-	engine "github.com/OpenNSW/go-temporal-workflow"
+	wf "github.com/OpenNSW/go-temporal-workflow"
 	"github.com/OpenNSW/nsw-task-flow/orchestrator"
 	"github.com/OpenNSW/nsw-task-flow/plugins"
-	tfstore "github.com/OpenNSW/nsw-task-flow/store"
+	twfstore "github.com/OpenNSW/nsw-task-flow/store"
 
 	customplugins "github.com/OpenNSW/nsw/internal/taskv2/plugins"
 
@@ -40,8 +40,8 @@ const (
 // nsw-task-flow TaskManager built on top of them.
 type Runtime struct {
 	tm          *orchestrator.TaskManager
-	parent      engine.TemporalManager
-	task        engine.TemporalManager
+	parent      wf.TemporalManager
+	task        wf.TemporalManager
 	registry    *orchestrator.TaskTemplateRegistry
 	pluginsRepo *plugins.Registry
 }
@@ -54,7 +54,7 @@ type UpstreamService interface {
 // Config bundles construction inputs for NewRuntime.
 type Config struct {
 	TemporalClient  client.Client
-	Store           tfstore.TaskStore
+	Store           twfstore.TaskStore
 	Registry        *orchestrator.TaskTemplateRegistry
 	BackendBaseURL  string          // public base URL of THIS backend, used in callbacks (e.g. http://localhost:8080)
 	DevMode         bool            // if true, plugin dispatch swallows external HTTP errors
@@ -105,7 +105,7 @@ func NewRuntime(cfg Config) (*Runtime, error) {
 	// drives the sub-workflow and wakes the parent via TaskDone — so we
 	// return ErrResultPending after a successful kick-off so the engine
 	// pauses the activity instead of completing it synchronously.
-	parentTaskHandler := func(payload engine.TaskPayload) (map[string]any, error) {
+	parentTaskHandler := func(payload wf.TaskPayload) (map[string]any, error) {
 		slog.Info("taskv2 parent: TASK node activated", "node", payload.NodeID, "template", payload.TaskTemplateID)
 		if tm == nil {
 			return nil, fmt.Errorf("taskv2 parent handler invoked before TaskManager was wired")
@@ -124,9 +124,9 @@ func NewRuntime(cfg Config) (*Runtime, error) {
 		}
 		return nil
 	}
-	parent := engine.NewTemporalManager(cfg.TemporalClient, parentTaskQueue, parentTaskHandler, parentCompletion)
+	parent := wf.NewTemporalManager(cfg.TemporalClient, parentTaskQueue, parentTaskHandler, parentCompletion)
 
-	taskHandler := func(payload engine.TaskPayload) (map[string]any, error) {
+	taskHandler := func(payload wf.TaskPayload) (map[string]any, error) {
 		slog.Info("taskv2 task: step activated", "node", payload.NodeID, "template", payload.TaskTemplateID)
 		if tm == nil {
 			return nil, fmt.Errorf("taskv2 task handler invoked before TaskManager was wired")
@@ -155,7 +155,7 @@ func NewRuntime(cfg Config) (*Runtime, error) {
 		}
 		return tm.HandleTaskCompletion(workflowID, finalVariables)
 	}
-	taskMgr := engine.NewTemporalManager(cfg.TemporalClient, taskTaskQueue, taskHandler, taskCompletion)
+	taskMgr := wf.NewTemporalManager(cfg.TemporalClient, taskTaskQueue, taskHandler, taskCompletion)
 
 	onTaskCompleted := func(parentWorkflowID, parentRunID, parentNodeID string, finalVariables map[string]any) error {
 		slog.Info("taskv2: waking parent workflow", "parentWorkflowId", parentWorkflowID, "node", parentNodeID)
@@ -181,11 +181,11 @@ func NewRuntime(cfg Config) (*Runtime, error) {
 	}, nil
 }
 
-// Manager returns the underlying TaskManager.
-func (r *Runtime) Manager() *orchestrator.TaskManager { return r.tm }
+// TaskManager returns the underlying TaskManager.
+func (r *Runtime) TaskManager() *orchestrator.TaskManager { return r.tm }
 
-// ParentManager returns the parent Temporal manager (used by the start-workflow handler).
-func (r *Runtime) ParentManager() engine.TemporalManager { return r.parent }
+// WorkflowManager returns the parent Temporal manager (used by the start-workflow handler).
+func (r *Runtime) WorkflowManager() wf.TemporalManager { return r.parent }
 
 // Registry returns the template registry (for the HTTP router).
 func (r *Runtime) Registry() *orchestrator.TaskTemplateRegistry { return r.registry }

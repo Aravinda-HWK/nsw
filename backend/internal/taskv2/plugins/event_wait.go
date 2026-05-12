@@ -37,13 +37,13 @@ func (p *EventWaitPlugin) Execute(ctx pluginContext, configRaw json.RawMessage) 
 
 	ctx.Record.Status = "WAITING_FOR_EVENT"
 
-	body := buildSubmissionBody(ctx.Record, cfg.TaskCode, p.client.callbackTasksURL())
+	body := buildSubmissionBody(ctx.Record, &cfg.TaskCode, p.client.callbackTasksURL())
 	if cfg.TaskType != "" {
 		body["externalTaskType"] = cfg.TaskType
 	}
 
 	slog.Info("taskv2 event_wait: registering with external queue",
-		"taskId", ctx.Record.TaskID, "url", cfg.ExternalURL, "taskCode", cfg.TaskCode, "taskType", cfg.TaskType)
+		"taskId", ctx.Record.TaskID, "url", cfg.ExternalURL, "taskCode", &cfg.TaskCode, "taskType", cfg.TaskType)
 
 	return p.client.post(ctx.Context, cfg.ExternalURL, body)
 }

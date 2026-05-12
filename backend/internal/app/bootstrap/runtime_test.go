@@ -227,8 +227,8 @@ func TestRuntime_Accessors_ReturnWiredValues(t *testing.T) {
 		registry: registry,
 	}
 
-	assert.Nil(t, r.Manager(), "Manager() returns the underlying *orchestrator.TaskManager pointer")
-	assert.Same(t, engine.TemporalManager(parent), r.ParentManager(), "ParentManager() returns the parent manager passed at construction")
+	assert.Nil(t, r.TaskManager(), "Manager() returns the underlying *orchestrator.TaskManager pointer")
+	assert.Same(t, engine.TemporalManager(parent), r.WorkflowManager(), "ParentManager() returns the parent manager passed at construction")
 	assert.Same(t, registry, r.Registry(), "Registry() returns the template registry passed at construction")
 }
 

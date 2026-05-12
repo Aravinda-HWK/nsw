@@ -98,7 +98,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 
 	taskStore := taskv2store.NewGormTaskStore(db)
-	taskFlowRuntime, err := NewRuntime(Config{
+	runtime, err := NewRuntime(Config{
 		TemporalClient:  temporalClient,
 		Store:           taskStore,
 		Registry:        registry,
@@ -112,9 +112,9 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("failed to start taskv2 runtime: %w", err)
 	}
 
-	registererr := consignmentService.RegisterWorkflowManager(taskFlowRuntime.ParentManager())
+	registererr := consignmentService.RegisterWorkflowManager(runtime.WorkflowManager())
 	if registererr != nil {
-		_ = taskFlowRuntime.Close()
+		_ = runtime.Close()
 		temporalClient.Close()
 		_ = database.Close(db)
 		return nil, fmt.Errorf("failed to register workflow manager with consignment service: %w", registererr)
@@ -129,7 +129,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// Storage / uploads.
 	storageDriver, err := uploads.NewStorageFromConfig(ctx, cfg.Storage)
 	if err != nil {
-		_ = taskFlowRuntime.Close()
+		_ = runtime.Close()
 		temporalClient.Close()
 		_ = database.Close(db)
 		return nil, fmt.Errorf("failed to initialize storage: %w", err)
@@ -143,13 +143,13 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	authManager, err := auth.NewManager(userProfileService, cfg.Auth)
 	if err != nil {
-		_ = taskFlowRuntime.Close()
+		_ = runtime.Close()
 		temporalClient.Close()
 		_ = database.Close(db)
 		return nil, fmt.Errorf("failed to create auth manager: %w", err)
 	}
 	if err := authManager.Health(); err != nil {
-		_ = taskFlowRuntime.Close()
+		_ = runtime.Close()
 		temporalClient.Close()
 		_ = authManager.Close()
 		_ = database.Close(db)
@@ -169,8 +169,8 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	// nsw-task-flow HTTP routers — trader-facing and consignment-task discovery.
 	// The /api/oga/* surface lives in the standalone OGA service (oga/), not here.
-	tfRouter := taskv2router.New(taskFlowRuntime.Manager(), taskFlowRuntime.ParentManager(), registry)
-	consignmentTasksRouter := taskv2router.NewConsignmentTasksRouter(taskFlowRuntime.Manager(), registry)
+	tfRouter := taskv2router.New(runtime.TaskManager(), runtime.WorkflowManager(), registry)
+	consignmentTasksRouter := taskv2router.NewConsignmentTasksRouter(runtime.TaskManager(), registry)
 
 	withAuth := authManager.Middleware()
 
@@ -238,7 +238,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	closeFn := func() error {
 		var closeErrs []error
-		if err := taskFlowRuntime.Close(); err != nil {
+		if err := runtime.Close(); err != nil {
 			closeErrs = append(closeErrs, fmt.Errorf("failed to close taskv2 runtime: %w", err))
 		}
 		temporalClient.Close()
