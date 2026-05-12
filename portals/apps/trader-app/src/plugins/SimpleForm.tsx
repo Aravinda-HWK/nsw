@@ -328,7 +328,9 @@ export default function SimpleForm(props: { configs: SimpleFormConfig; pluginSta
         <SubmissionResponseForm formInfo={props.configs.submissionResponseForm} />
       )}
 
-      {props.configs.ogaReviewForm && props.configs.ogaReviewForm?.formData && !feedback && <OgaReviewForm formInfo={props.configs.ogaReviewForm} />}
+      {props.configs.ogaReviewForm && props.configs.ogaReviewForm?.formData && !feedback && (
+        <OgaReviewForm formInfo={props.configs.ogaReviewForm} />
+      )}
 
       {feedback && feedback.length > 0 && <OGAFeedbackHistory entries={feedback} />}
     </div>
