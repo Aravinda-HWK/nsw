@@ -12,7 +12,7 @@
 //	            │ activates step
 //	            ▼
 //	      tm.StartSubTask  →  routes to a registered plugin
-package runtime
+package bootstrap
 
 import (
 	"context"
@@ -45,13 +45,19 @@ type Runtime struct {
 	pluginsRepo *plugins.Registry
 }
 
+// UpstreamService is notified when a parent workflow completes.
+type UpstreamService interface {
+	CompletionHandler(workflowID string, finalContext map[string]any) error
+}
+
 // Config bundles construction inputs for NewRuntime.
 type Config struct {
-	TemporalClient client.Client
-	Store          tfstore.TaskStore
-	Registry       *orchestrator.TaskTemplateRegistry
-	BackendBaseURL string // public base URL of THIS backend, used in callbacks (e.g. http://localhost:8080)
-	DevMode        bool   // if true, plugin dispatch swallows external HTTP errors
+	TemporalClient  client.Client
+	Store           tfstore.TaskStore
+	Registry        *orchestrator.TaskTemplateRegistry
+	BackendBaseURL  string          // public base URL of THIS backend, used in callbacks (e.g. http://localhost:8080)
+	DevMode         bool            // if true, plugin dispatch swallows external HTTP errors
+	UpstreamService UpstreamService // optional; called when a parent workflow completes
 }
 
 // NewRuntime constructs the parent + task Temporal managers, registers the
@@ -102,6 +108,11 @@ func NewRuntime(cfg Config) (*Runtime, error) {
 	}
 	parentCompletion := func(workflowID string, finalVariables map[string]any) error {
 		slog.Info("taskv2 parent: workflow completed", "workflowId", workflowID, "finalVariables", finalVariables)
+		if cfg.UpstreamService != nil {
+			if err := cfg.UpstreamService.CompletionHandler(workflowID, finalVariables); err != nil {
+				return fmt.Errorf("taskv2 parent: upstream completion handler: %w", err)
+			}
+		}
 		return nil
 	}
 	parent := engine.NewTemporalManager(cfg.TemporalClient, parentTaskQueue, parentTaskHandler, parentCompletion)

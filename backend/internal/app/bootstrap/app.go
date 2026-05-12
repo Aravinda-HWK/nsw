@@ -16,7 +16,6 @@ import (
 	"github.com/OpenNSW/nsw/internal/middleware"
 	"github.com/OpenNSW/nsw/internal/payments"
 	taskv2router "github.com/OpenNSW/nsw/internal/taskv2/router"
-	taskv2runtime "github.com/OpenNSW/nsw/internal/taskv2/runtime"
 	taskv2store "github.com/OpenNSW/nsw/internal/taskv2/store"
 	taskv2templates "github.com/OpenNSW/nsw/internal/taskv2/templates"
 	"github.com/OpenNSW/nsw/internal/temporal"
@@ -99,12 +98,13 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 
 	taskStore := taskv2store.NewGormTaskStore(db)
-	taskFlowRuntime, err := taskv2runtime.NewRuntime(taskv2runtime.Config{
-		TemporalClient: temporalClient,
-		Store:          taskStore,
-		Registry:       registry,
-		BackendBaseURL: cfg.Server.ServiceURL,
-		DevMode:        cfg.Server.TaskFlowDevMode,
+	taskFlowRuntime, err := NewRuntime(Config{
+		TemporalClient:  temporalClient,
+		Store:           taskStore,
+		Registry:        registry,
+		BackendBaseURL:  cfg.Server.ServiceURL,
+		DevMode:         cfg.Server.TaskFlowDevMode,
+		UpstreamService: consignmentService,
 	})
 	if err != nil {
 		temporalClient.Close()
