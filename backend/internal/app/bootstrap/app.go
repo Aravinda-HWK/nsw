@@ -17,7 +17,7 @@ import (
 	"github.com/OpenNSW/nsw/internal/payments"
 	taskv2router "github.com/OpenNSW/nsw/internal/taskv2/router"
 	taskv2store "github.com/OpenNSW/nsw/internal/taskv2/store"
-	taskv2templates "github.com/OpenNSW/nsw/internal/taskv2/templates"
+	"github.com/OpenNSW/nsw/internal/template"
 	"github.com/OpenNSW/nsw/internal/temporal"
 	"github.com/OpenNSW/nsw/internal/uploads"
 	"github.com/OpenNSW/nsw/internal/uploads/drivers"
@@ -91,10 +91,10 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	// nsw-task-flow registry, store, runtime.
 	registry := orchestrator.NewTaskTemplateRegistry()
-	if err := taskv2templates.LoadFromDir(registry, cfg.Server.TaskTemplatesDir); err != nil {
+	if err := template.LoadFromDir(registry, cfg.Server.TemplatesDir); err != nil {
 		temporalClient.Close()
 		_ = database.Close(db)
-		return nil, fmt.Errorf("failed to load task templates from %s: %w", cfg.Server.TaskTemplatesDir, err)
+		return nil, fmt.Errorf("failed to load task templates from %s: %w", cfg.Server.TemplatesDir, err)
 	}
 
 	taskStore := taskv2store.NewGormTaskStore(db)

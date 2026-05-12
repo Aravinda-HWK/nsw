@@ -1,8 +1,6 @@
-// Package templates loads NPQS task & workflow templates from a directory of
-// JSON files into an nsw-task-flow TaskTemplateRegistry.
-//
-// This is a port of nsw-task-flow/demo/templates.go.
-package templates
+// Package template loads task and workflow templates from a directory of JSON
+// files into an nsw-task-flow TaskTemplateRegistry.
+package template
 
 import (
 	"encoding/json"
@@ -39,7 +37,7 @@ func LoadFromDir(registry *orchestrator.TaskTemplateRegistry, templatesDir strin
 		var entry orchestrator.TaskTemplateEntry
 		if err := json.Unmarshal(data, &entry); err == nil && entry.TemplateID != "" && entry.PluginName != "" {
 			registry.Register(entry)
-			slog.Info("taskv2 templates: registered task template",
+			slog.Info("templates: registered task template",
 				"templateId", entry.TemplateID, "taskType", entry.TaskType, "plugin", entry.PluginName)
 			return nil
 		}
@@ -48,7 +46,7 @@ func LoadFromDir(registry *orchestrator.TaskTemplateRegistry, templatesDir strin
 		var workflowDef engine.WorkflowDefinition
 		if err := json.Unmarshal(data, &workflowDef); err == nil && workflowDef.ID != "" && len(workflowDef.Nodes) > 0 {
 			registry.RegisterWorkflow(workflowDef)
-			slog.Info("taskv2 templates: registered sub-workflow",
+			slog.Info("templates: registered sub-workflow",
 				"id", workflowDef.ID, "name", workflowDef.Name, "nodes", len(workflowDef.Nodes))
 			return nil
 		}
@@ -59,11 +57,11 @@ func LoadFromDir(registry *orchestrator.TaskTemplateRegistry, templatesDir strin
 		}
 		if err := json.Unmarshal(data, &generic); err == nil && generic.ID != "" {
 			registry.RegisterGenericTemplate(generic.ID, data)
-			slog.Info("taskv2 templates: registered generic template", "id", generic.ID, "path", path)
+			slog.Info("templates: registered generic template", "id", generic.ID, "path", path)
 			return nil
 		}
 
-		slog.Warn("taskv2 templates: unrecognised JSON, skipped", "path", path)
+		slog.Warn("templates: unrecognised JSON, skipped", "path", path)
 		return nil
 	})
 	if walkErr != nil {

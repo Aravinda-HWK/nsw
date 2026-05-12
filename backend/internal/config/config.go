@@ -31,7 +31,7 @@ type ServerConfig struct {
 	Port               int
 	ServiceURL         string
 	ServicesConfigPath string
-	TaskTemplatesDir   string // directory of nsw-task-flow JSON templates (default: internal/taskv2/npqs)
+	TemplatesDir       string // directory of JSON templates (default: internal/template/data/npqs)
 	TaskFlowDevMode    bool   // if true, the taskv2 dispatcher swallows external HTTP errors
 	Debug              bool
 	LogLevel           slog.Level
@@ -83,7 +83,7 @@ func Load() (*Config, error) {
 			Port:               serverPort,
 			ServiceURL:         getEnvOrDefault("SERVICE_URL", fmt.Sprintf("http://localhost:%d", serverPort)),
 			ServicesConfigPath: getEnvOrDefault("SERVICES_CONFIG_PATH", "configs/services.json"),
-			TaskTemplatesDir:   getEnvOrDefault("TASK_TEMPLATES_DIR", "internal/taskv2/npqs"),
+			TemplatesDir:       getEnvOrDefault("TASK_TEMPLATES_DIR", "internal/template/data/npqs"),
 			TaskFlowDevMode:    getBoolOrDefault("TASK_FLOW_DEV_MODE", true),
 			Debug:              getBoolOrDefault("SERVER_DEBUG", true),
 			LogLevel:           parseLogLevel(getEnvOrDefault("SERVER_LOG_LEVEL", "info")),
