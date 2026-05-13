@@ -19,33 +19,34 @@
 //  3. Honour devMode — if dispatch fails (e.g. the OGA portal isn't running
 //     yet) the plugin still transitions the task to its waiting state and
 //     logs a warning, so local development doesn't block the workflow.
+//
+//  4. Resolve target URLs via remote.Manager so service base URLs,
+//     authentication, and timeouts are configured centrally in services.json.
+//     Template configs specify only service_id + path, never full URLs.
 package plugins
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"strings"
-	"time"
 
 	tfplugins "github.com/OpenNSW/nsw-task-flow/plugins"
+	"github.com/OpenNSW/nsw/pkg/remote"
 )
 
-// dispatchClient bundles outbound HTTP behaviour shared by every dispatching
-// plugin in this package.
-type dispatchClient struct {
-	httpClient     *http.Client
+// dispatchHelper bundles outbound HTTP behaviour shared by every dispatching
+// plugin in this package. It delegates to remote.Manager so service base URLs,
+// authentication, and timeouts are configured centrally in services.json
+// rather than being hard-coded in the template configs.
+type dispatchHelper struct {
+	manager        *remote.Manager
 	backendBaseURL string
 	devMode        bool
 }
 
-func newDispatchClient(backendBaseURL string, devMode bool) *dispatchClient {
-	return &dispatchClient{
-		httpClient:     &http.Client{Timeout: 15 * time.Second},
+func newDispatchHelper(manager *remote.Manager, backendBaseURL string, devMode bool) *dispatchHelper {
+	return &dispatchHelper{
+		manager:        manager,
 		backendBaseURL: strings.TrimRight(backendBaseURL, "/"),
 		devMode:        devMode,
 	}
@@ -53,47 +54,46 @@ func newDispatchClient(backendBaseURL string, devMode bool) *dispatchClient {
 
 // callbackTasksURL is the URL the receiving OGA portal should call back into
 // to advance the workflow once the officer has acted.
-func (c *dispatchClient) callbackTasksURL() string {
-	return c.backendBaseURL + "/api/v1/tasks"
+func (h *dispatchHelper) callbackTasksURL() string {
+	return h.backendBaseURL + "/api/v1/tasks"
 }
 
-// post sends body as JSON to url and returns nil on any 2xx. In devMode, dispatch
-// errors are logged-and-swallowed so the workflow can still be driven via the
-// in-process OGA-app (POST /api/oga/applications/{id}/review).
-func (c *dispatchClient) post(ctx context.Context, url string, body any) error {
-	bodyBytes, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("marshal body: %w", err)
+// post sends body as JSON to the resolved service+path and returns nil on any
+// 2xx. In devMode, dispatch errors are logged-and-swallowed so the workflow
+// can still be driven via the in-process OGA-app.
+func (h *dispatchHelper) post(ctx context.Context, serviceID, path string, body any) error {
+	req := remote.Request{
+		Method: "POST",
+		Path:   path,
+		Body:   body,
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return c.dispatchOrSwallow("transport", url, err)
-	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			slog.Warn("taskv2 plugin: failed to close response body", "url", url, "error", closeErr)
-		}
-	}()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		preview, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		err := fmt.Errorf("POST %s returned %d: %s", url, resp.StatusCode, preview)
-		return c.dispatchOrSwallow("status", url, err)
+	if err := h.manager.Call(ctx, serviceID, req, nil); err != nil {
+		return h.dispatchOrSwallow(serviceID, path, err)
 	}
 	return nil
 }
 
-func (c *dispatchClient) dispatchOrSwallow(kind, url string, err error) error {
-	if c.devMode {
+// postAsync fires the POST in a background goroutine and returns immediately.
+// Used for FIRE_AND_FORGET tasks where the workflow does not block on the
+// external service's response.
+func (h *dispatchHelper) postAsync(serviceID, path string, body any) {
+	go func() {
+		req := remote.Request{
+			Method: "POST",
+			Path:   path,
+			Body:   body,
+		}
+		if err := h.manager.Call(context.Background(), serviceID, req, nil); err != nil {
+			slog.Warn("taskv2 api_call: fire-and-forget dispatch failed",
+				"serviceId", serviceID, "path", path, "error", err)
+		}
+	}()
+}
+
+func (h *dispatchHelper) dispatchOrSwallow(serviceID, path string, err error) error {
+	if h.devMode {
 		slog.Warn("taskv2 plugin: dispatch failed (dev mode — swallowing)",
-			"kind", kind, "url", url, "error", err)
+			"serviceId", serviceID, "path", path, "error", err)
 		return nil
 	}
 	return err

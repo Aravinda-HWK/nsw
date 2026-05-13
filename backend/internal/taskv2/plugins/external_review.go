@@ -7,25 +7,27 @@ import (
 
 	tfplugins "github.com/OpenNSW/nsw-task-flow/plugins"
 	tfstore "github.com/OpenNSW/nsw-task-flow/store"
+	"github.com/OpenNSW/nsw/pkg/remote"
 )
 
 // ExternalReviewPlugin is our custom replacement for
 // nsw-task-flow's generic_external_review plugin. It supplies the OGA portal
-// at the configured external_url with a fully-populated submission envelope.
+// with a fully-populated submission envelope.
 type ExternalReviewPlugin struct {
-	client *dispatchClient
+	client *dispatchHelper
 }
 
 // NewExternalReviewPlugin builds a plugin that POSTs the trader's submitted
-// form to the configured external_url with a rich body shape.
-func NewExternalReviewPlugin(backendBaseURL string, devMode bool) *ExternalReviewPlugin {
-	return &ExternalReviewPlugin{client: newDispatchClient(backendBaseURL, devMode)}
+// form to the configured service+path with a rich body shape.
+func NewExternalReviewPlugin(manager *remote.Manager, backendBaseURL string, devMode bool) *ExternalReviewPlugin {
+	return &ExternalReviewPlugin{client: newDispatchHelper(manager, backendBaseURL, devMode)}
 }
 
 func (p *ExternalReviewPlugin) Name() string { return "generic_external_review" }
 
 type externalReviewConfig struct {
-	ExternalURL         string `json:"external_url"`
+	ServiceID           string `json:"service_id"`
+	Path                string `json:"path"`
 	ReviewerJsonFormsID string `json:"reviewer_jsonforms_id,omitempty"`
 	TaskCode            string `json:"task_code,omitempty"`
 }
@@ -39,8 +41,11 @@ func (p *ExternalReviewPlugin) Execute(ctx pluginContext, configRaw json.RawMess
 	if err := json.Unmarshal(configRaw, &cfg); err != nil {
 		return fmt.Errorf("external_review: invalid config: %w", err)
 	}
-	if cfg.ExternalURL == "" {
-		return fmt.Errorf("external_review: external_url is required")
+	if cfg.ServiceID == "" {
+		return fmt.Errorf("external_review: service_id is required")
+	}
+	if cfg.Path == "" {
+		return fmt.Errorf("external_review: path is required")
 	}
 
 	// Mutate the in-memory record BEFORE dispatching so the body we send
@@ -53,9 +58,9 @@ func (p *ExternalReviewPlugin) Execute(ctx pluginContext, configRaw json.RawMess
 	body := buildSubmissionBody(ctx.Record, &cfg.TaskCode, p.client.callbackTasksURL())
 
 	slog.Info("taskv2 external_review: dispatching to OGA portal",
-		"taskId", ctx.Record.TaskID, "url", cfg.ExternalURL, "taskCode", &cfg.TaskCode)
+		"taskId", ctx.Record.TaskID, "serviceId", cfg.ServiceID, "path", cfg.Path, "taskCode", cfg.TaskCode)
 
-	if err := p.client.post(ctx.Context, cfg.ExternalURL, body); err != nil {
+	if err := p.client.post(ctx.Context, cfg.ServiceID, cfg.Path, body); err != nil {
 		return err
 	}
 	return ErrSuspended

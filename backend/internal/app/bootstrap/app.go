@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/OpenNSW/nsw-task-flow/orchestrator"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/OpenNSW/nsw/pkg/notification"
 	"github.com/OpenNSW/nsw/pkg/notification/channels"
+	"github.com/OpenNSW/nsw/pkg/remote"
 )
 
 // App contains initialized HTTP server and cleanup hooks.
@@ -97,11 +99,21 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("failed to load task templates from %s: %w", cfg.Server.TemplatesDir, err)
 	}
 
+	remoteManager := remote.NewManager()
+	if err := remoteManager.LoadServices(cfg.Server.ServicesConfigPath); err != nil {
+		slog.Warn("app: failed to load external services configuration",
+			"path", cfg.Server.ServicesConfigPath, "error", err)
+	} else {
+		slog.Info("app: external services configuration loaded",
+			"services", remoteManager.ListServices())
+	}
+
 	taskStore := taskv2store.NewGormTaskStore(db)
 	runtime, err := NewRuntime(Config{
 		TemporalClient:  temporalClient,
 		Store:           taskStore,
 		Registry:        registry,
+		RemoteManager:   remoteManager,
 		BackendBaseURL:  cfg.Server.ServiceURL,
 		DevMode:         cfg.Server.TaskFlowDevMode,
 		UpstreamService: consignmentService,

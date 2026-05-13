@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+
+	"github.com/OpenNSW/nsw/pkg/remote"
 )
 
 // PaymentPlugin replaces nsw-task-flow's generic_payment. Same behaviour —
@@ -11,17 +13,19 @@ import (
 // but emits the rich body envelope so the payment service can call back to
 // /api/v1/tasks/{taskId} with PAYMENT_SUCCESS / PAYMENT_FAILED.
 type PaymentPlugin struct {
-	client *dispatchClient
+	client *dispatchHelper
 }
 
-func NewPaymentPlugin(backendBaseURL string, devMode bool) *PaymentPlugin {
-	return &PaymentPlugin{client: newDispatchClient(backendBaseURL, devMode)}
+func NewPaymentPlugin(manager *remote.Manager, backendBaseURL string, devMode bool) *PaymentPlugin {
+	return &PaymentPlugin{client: newDispatchHelper(manager, backendBaseURL, devMode)}
 }
 
 func (p *PaymentPlugin) Name() string { return "generic_payment" }
 
 type paymentConfig struct {
-	PaymentServiceURL string `json:"payment_service_url"`
+	ServiceID string `json:"service_id,omitempty"`
+	Path      string `json:"path,omitempty"`
+	TaskCode  string `json:"task_code,omitempty"`
 }
 
 func (p *PaymentPlugin) Execute(ctx pluginContext, configRaw json.RawMessage) error {
@@ -32,21 +36,21 @@ func (p *PaymentPlugin) Execute(ctx pluginContext, configRaw json.RawMessage) er
 
 	ctx.Record.Status = "PENDING_PAYMENT"
 
-	// payment_service_url is optional. When empty, the plugin just transitions
-	// to PENDING_PAYMENT and waits for the trader's PAYMENT_SUCCESS /
+	// service_id is optional. When empty, the plugin just transitions to
+	// PENDING_PAYMENT and waits for the trader's PAYMENT_SUCCESS /
 	// PAYMENT_FAILED callback — there is no officer-side review for payment.
-	if cfg.PaymentServiceURL == "" {
-		slog.Info("taskv2 payment: no payment_service_url configured, skipping dispatch",
+	if cfg.ServiceID == "" {
+		slog.Info("taskv2 payment: no service_id configured, skipping dispatch",
 			"taskId", ctx.Record.TaskID)
 		return ErrSuspended
 	}
 
-	body := buildSubmissionBody(ctx.Record, nil, p.client.callbackTasksURL())
+	body := buildSubmissionBody(ctx.Record, &cfg.TaskCode, p.client.callbackTasksURL())
 
 	slog.Info("taskv2 payment: dispatching to payment service",
-		"taskId", ctx.Record.TaskID, "url", cfg.PaymentServiceURL)
+		"taskId", ctx.Record.TaskID, "serviceId", cfg.ServiceID, "path", cfg.Path)
 
-	if err := p.client.post(ctx.Context, cfg.PaymentServiceURL, body); err != nil {
+	if err := p.client.post(ctx.Context, cfg.ServiceID, cfg.Path, body); err != nil {
 		return err
 	}
 	return ErrSuspended

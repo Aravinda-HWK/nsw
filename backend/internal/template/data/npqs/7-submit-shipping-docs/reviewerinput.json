@@ -4,7 +4,8 @@
     "plugin_name": "generic_external_review",
     "plugin_properties": {
         "reviewer_jsonforms_id": "npqs-submit-shipping-docs--reviewer-form",
-        "external_url": "http://localhost:8081/api/oga/inject",
+        "service_id": "npqs",
+        "path": "/api/oga/inject",
         "task_code": "npqs_shipping_docs_review_v1"
     }
 }

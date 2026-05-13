@@ -7,6 +7,7 @@ import (
 
 	tfplugins "github.com/OpenNSW/nsw-task-flow/plugins"
 	tfstore "github.com/OpenNSW/nsw-task-flow/store"
+	"github.com/OpenNSW/nsw/pkg/remote"
 )
 
 // OfficerInputPlugin is our drop-in replacement for nsw-task-flow's
@@ -18,22 +19,23 @@ import (
 // QUEUED_EXTERNALLY, then POSTs the same SimpleForm envelope the OGA
 // portal at /api/oga/inject expects, so the task shows up for the officer.
 //
-// `external_url` is optional. When omitted, the plugin still transitions to
-// QUEUED_EXTERNALLY so the in-process oga-router queue surfaces it; the
-// dispatch is what's needed for the standalone NPQS / FCAU OGA portals.
+// `service_id` and `path` are optional. When omitted, the plugin still
+// transitions to QUEUED_EXTERNALLY so the in-process oga-router queue surfaces
+// it; the dispatch is what's needed for the standalone NPQS / FCAU OGA portals.
 type OfficerInputPlugin struct {
-	client *dispatchClient
+	client *dispatchHelper
 }
 
-func NewOfficerInputPlugin(backendBaseURL string, devMode bool) *OfficerInputPlugin {
-	return &OfficerInputPlugin{client: newDispatchClient(backendBaseURL, devMode)}
+func NewOfficerInputPlugin(manager *remote.Manager, backendBaseURL string, devMode bool) *OfficerInputPlugin {
+	return &OfficerInputPlugin{client: newDispatchHelper(manager, backendBaseURL, devMode)}
 }
 
 func (p *OfficerInputPlugin) Name() string { return "generic_officer_input" }
 
 type officerInputConfig struct {
 	OfficerJsonFormsID string `json:"officer_jsonforms_id,omitempty"`
-	ExternalURL        string `json:"external_url,omitempty"`
+	ServiceID          string `json:"service_id,omitempty"`
+	Path               string `json:"path,omitempty"`
 	TaskCode           string `json:"task_code,omitempty"`
 	StatusOverride     string `json:"status_override,omitempty"`
 }
@@ -56,8 +58,8 @@ func (p *OfficerInputPlugin) Execute(ctx pluginContext, configRaw json.RawMessag
 	}
 	ctx.Record.Status = status
 
-	if cfg.ExternalURL == "" {
-		slog.Info("taskv2 officer_input: no external_url configured, skipping dispatch",
+	if cfg.ServiceID == "" {
+		slog.Info("taskv2 officer_input: no service_id configured, skipping dispatch",
 			"taskId", ctx.Record.TaskID, "form", ctx.Record.ReviewerFormID)
 		return ErrSuspended
 	}
@@ -65,9 +67,9 @@ func (p *OfficerInputPlugin) Execute(ctx pluginContext, configRaw json.RawMessag
 	body := buildSubmissionBody(ctx.Record, &cfg.TaskCode, p.client.callbackTasksURL())
 
 	slog.Info("taskv2 officer_input: dispatching to OGA portal",
-		"taskId", ctx.Record.TaskID, "url", cfg.ExternalURL, "taskCode", &cfg.TaskCode)
+		"taskId", ctx.Record.TaskID, "serviceId", cfg.ServiceID, "path", cfg.Path, "taskCode", cfg.TaskCode)
 
-	if err := p.client.post(ctx.Context, cfg.ExternalURL, body); err != nil {
+	if err := p.client.post(ctx.Context, cfg.ServiceID, cfg.Path, body); err != nil {
 		return err
 	}
 	return ErrSuspended

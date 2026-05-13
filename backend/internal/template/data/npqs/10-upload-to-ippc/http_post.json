@@ -3,6 +3,7 @@
     "task_type": "FIRE_AND_FORGET",
     "plugin_name": "generic_api_call",
     "plugin_properties": {
-        "url": "http://ippc-hub/api/upload"
+        "service_id": "ippc-hub",
+        "path": "/api/upload"
     }
 }

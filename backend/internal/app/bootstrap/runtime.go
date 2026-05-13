@@ -27,6 +27,7 @@ import (
 	twfstore "github.com/OpenNSW/nsw-task-flow/store"
 
 	customplugins "github.com/OpenNSW/nsw/internal/taskv2/plugins"
+	"github.com/OpenNSW/nsw/pkg/remote"
 
 	"go.temporal.io/sdk/client"
 )
@@ -56,6 +57,7 @@ type Config struct {
 	TemporalClient  client.Client
 	Store           twfstore.TaskStore
 	Registry        *orchestrator.TaskTemplateRegistry
+	RemoteManager   *remote.Manager // resolves service base URLs from services.json
 	BackendBaseURL  string          // public base URL of THIS backend, used in callbacks (e.g. http://localhost:8080)
 	DevMode         bool            // if true, plugin dispatch swallows external HTTP errors
 	UpstreamService UpstreamService // optional; called when a parent workflow completes
@@ -73,6 +75,9 @@ func NewRuntime(cfg Config) (*Runtime, error) {
 	if cfg.Registry == nil {
 		return nil, fmt.Errorf("taskv2 runtime: template registry is required")
 	}
+	if cfg.RemoteManager == nil {
+		return nil, fmt.Errorf("taskv2 runtime: remote manager is required")
+	}
 
 	// Custom dispatching plugins read from ctx.Record directly (so the body
 	// they POST reflects the active sub-step's freshly-set ReviewerFormID,
@@ -84,11 +89,11 @@ func NewRuntime(cfg Config) (*Runtime, error) {
 		plugin   plugins.TaskPlugin
 	}{
 		{"APPLICATION", plugins.NewUserInputPlugin()},
-		{"APPLICATION", customplugins.NewExternalReviewPlugin(cfg.BackendBaseURL, cfg.DevMode)},
-		{"APPLICATION", customplugins.NewOfficerInputPlugin(cfg.BackendBaseURL, cfg.DevMode)},
-		{"WAIT_FOR_EVENT", customplugins.NewEventWaitPlugin(cfg.BackendBaseURL, cfg.DevMode)},
-		{"PAYMENT", customplugins.NewPaymentPlugin(cfg.BackendBaseURL, cfg.DevMode)},
-		{"FIRE_AND_FORGET", customplugins.NewAPICallPlugin(cfg.BackendBaseURL, cfg.DevMode)},
+		{"APPLICATION", customplugins.NewExternalReviewPlugin(cfg.RemoteManager, cfg.BackendBaseURL, cfg.DevMode)},
+		{"APPLICATION", customplugins.NewOfficerInputPlugin(cfg.RemoteManager, cfg.BackendBaseURL, cfg.DevMode)},
+		{"WAIT_FOR_EVENT", customplugins.NewEventWaitPlugin(cfg.RemoteManager, cfg.BackendBaseURL, cfg.DevMode)},
+		{"PAYMENT", customplugins.NewPaymentPlugin(cfg.RemoteManager, cfg.BackendBaseURL, cfg.DevMode)},
+		{"FIRE_AND_FORGET", customplugins.NewAPICallPlugin(cfg.RemoteManager, cfg.BackendBaseURL, cfg.DevMode)},
 	}
 	for _, r := range registrations {
 		if err := pluginsRepo.Register(r.taskType, r.plugin); err != nil {
