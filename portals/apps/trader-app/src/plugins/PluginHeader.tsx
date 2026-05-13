@@ -14,18 +14,40 @@ const TYPE_COLORS: Record<TaskType, string> = {
   FIRE_AND_FORGET: 'bg-sky-50 text-sky-700 ring-sky-200',
 }
 
-const STATE_STYLES: Record<string, string> = {
-  INITIALIZED: 'bg-gray-100 text-gray-600 ring-gray-200',
-  IN_PROGRESS: 'bg-blue-50 text-blue-700 ring-blue-200',
-  COMPLETED: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  FAILED: 'bg-red-50 text-red-700 ring-red-200',
+const READY_STYLE = { chip: 'bg-blue-50 text-blue-700 ring-blue-200', dot: 'bg-blue-500' }
+const DRAFT_STYLE = { chip: 'bg-indigo-50 text-indigo-700 ring-indigo-200', dot: 'bg-indigo-500' }
+const ACTIVE_STYLE = {
+  chip: 'bg-orange-50 text-orange-700 ring-orange-200',
+  dot: 'bg-orange-500 animate-pulse',
+}
+const FEEDBACK_STYLE = { chip: 'bg-amber-50 text-amber-700 ring-amber-200', dot: 'bg-amber-500' }
+const REVIEWED_STYLE = { chip: 'bg-violet-50 text-violet-700 ring-violet-200', dot: 'bg-violet-500' }
+const COMPLETED_STYLE = {
+  chip: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  dot: 'bg-emerald-500',
+}
+const FAILED_STYLE = { chip: 'bg-red-50 text-red-700 ring-red-200', dot: 'bg-red-500' }
+const UNKNOWN_STYLE = { chip: 'bg-sky-50 text-sky-700 ring-sky-200', dot: 'bg-sky-500' }
+
+const PLUGIN_STATE_STYLES: Record<string, { chip: string; dot: string }> = {
+  INITIALIZED: READY_STYLE,
+  IDLE: READY_STYLE,
+  DRAFT: DRAFT_STYLE,
+  IN_PROGRESS: ACTIVE_STYLE,
+  SUBMITTED: ACTIVE_STYLE,
+  OGA_ACKNOWLEDGED: ACTIVE_STYLE,
+  NOTIFIED_SERVICE: ACTIVE_STYLE,
+  OGA_FEEDBACK_PROVIDED: FEEDBACK_STYLE,
+  OGA_REVIEWED: REVIEWED_STYLE,
+  COMPLETED: COMPLETED_STYLE,
+  RECEIVED_CALLBACK: COMPLETED_STYLE,
+  FAILED: FAILED_STYLE,
+  NOTIFY_FAILED: FAILED_STYLE,
+  SUBMISSION_FAILED: FAILED_STYLE,
 }
 
-const STATE_DOTS: Record<string, string> = {
-  INITIALIZED: 'bg-gray-400',
-  IN_PROGRESS: 'bg-blue-500 animate-pulse',
-  COMPLETED: 'bg-emerald-500',
-  FAILED: 'bg-red-500',
+function pluginStateStyle(pluginState: string): { chip: string; dot: string } {
+  return PLUGIN_STATE_STYLES[pluginState] ?? UNKNOWN_STYLE
 }
 
 function formatPluginState(pluginState: string): string {
@@ -35,9 +57,17 @@ function formatPluginState(pluginState: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  align = 'left',
+  children,
+}: {
+  label: string
+  align?: 'left' | 'right'
+  children: React.ReactNode
+}) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className={`flex flex-col gap-1 ${align === 'right' ? 'items-end' : 'items-start'}`}>
       <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">{label}</span>
       {children}
     </div>
@@ -46,15 +76,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 export default function PluginHeader({
   type,
-  state,
   pluginState,
 }: {
   type: TaskType
-  state: string
   pluginState: string
 }) {
-  const stateStyle = STATE_STYLES[state] ?? 'bg-gray-100 text-gray-600 ring-gray-200'
-  const stateDot = STATE_DOTS[state] ?? 'bg-gray-400'
+  const { chip, dot } = pluginStateStyle(pluginState)
 
   return (
     <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -67,25 +94,14 @@ export default function PluginHeader({
         </span>
       </Field>
 
-      <div className="flex items-start gap-4 flex-wrap">
-        <Field label="State">
-          <span
-            className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium ring-1 ring-inset ${stateStyle}`}
-          >
-            <span className={`w-2 h-2 rounded-full shrink-0 ${stateDot}`} />
-            {state
-              .replace(/_/g, ' ')
-              .toLowerCase()
-              .replace(/\b\w/g, (c) => c.toUpperCase())}
-          </span>
-        </Field>
-
-        <Field label="Plugin State">
-          <span className="inline-flex items-center rounded-full px-4 py-1.5 text-sm font-medium bg-gray-100 text-gray-500 ring-1 ring-inset ring-gray-200">
-            {formatPluginState(pluginState)}
-          </span>
-        </Field>
-      </div>
+      <Field label="State" align="right">
+        <span
+          className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium ring-1 ring-inset ${chip}`}
+        >
+          <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
+          {formatPluginState(pluginState)}
+        </span>
+      </Field>
     </div>
   )
 }
